@@ -61,6 +61,8 @@ def kill_process_group(proc: subprocess.Popen[bytes]) -> None:
 
 def main() -> int:
     args = parse_args()
+    parent_pid = os.getppid()
+    should_exit = False
 
     env = os.environ.copy()
     env.setdefault("TERM", "xterm-256color")
@@ -82,7 +84,9 @@ def main() -> int:
     os.close(slave_fd)
 
     def handle_signal(signum: int, _frame: object) -> None:
+        nonlocal should_exit
         if signum in (signal.SIGINT, signal.SIGTERM):
+            should_exit = True
             kill_process_group(proc)
 
     signal.signal(signal.SIGINT, handle_signal)
@@ -106,6 +110,14 @@ def main() -> int:
 
     try:
         while True:
+            current_parent = os.getppid()
+            if current_parent == 1 or current_parent != parent_pid:
+                should_exit = True
+                kill_process_group(proc)
+
+            if should_exit:
+                break
+
             if proc.poll() is not None:
                 while True:
                     try:

@@ -6150,6 +6150,20 @@ var PROFILE_LABELS = {
   claude: "Claude Code",
   custom: "Custom"
 };
+function isProcessAlive(child) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return false;
+  }
+  if (child.pid == null) {
+    return false;
+  }
+  try {
+    process.kill(child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 var AgentTerminalView = class extends import_obsidian.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
@@ -6399,6 +6413,7 @@ var AgentTerminalView = class extends import_obsidian.ItemView {
         env,
         stdio
       });
+      this.plugin.trackManagedProcess(child);
       this.process = child;
       this.processControlStream = null;
       if (process.platform !== "win32") {
@@ -6452,12 +6467,7 @@ var AgentTerminalView = class extends import_obsidian.ItemView {
     this.process = null;
     this.processControlStream = null;
     try {
-      current.kill("SIGTERM");
-      window.setTimeout(() => {
-        if (!current.killed) {
-          current.kill("SIGKILL");
-        }
-      }, 600);
+      this.plugin.terminateManagedProcess(current);
       this.terminal?.write("\r\n\x1B[90m[stopping process]\x1B[0m\r\n");
       this.statusEl.setText("idle");
       if (showNotice) {
@@ -6535,6 +6545,7 @@ var AgentTerminalPlugin = class extends import_obsidian.Plugin {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
     this.pendingInitialProfile = null;
+    this.activeProcesses = /* @__PURE__ */ new Set();
   }
   async onload() {
     await this.loadSettings();
@@ -6564,8 +6575,18 @@ var AgentTerminalPlugin = class extends import_obsidian.Plugin {
         void this.activateView("claude");
       }
     });
+    this.registerDomEvent(window, "beforeunload", () => {
+      this.stopAllManagedProcesses();
+    });
+    this.registerDomEvent(window, "pagehide", () => {
+      this.stopAllManagedProcesses();
+    });
+    this.register(() => {
+      this.stopAllManagedProcesses();
+    });
   }
   onunload() {
+    this.stopAllManagedProcesses();
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_AGENT_TERMINAL);
   }
   async loadSettings() {
@@ -6594,6 +6615,36 @@ var AgentTerminalPlugin = class extends import_obsidian.Plugin {
     const profile = this.pendingInitialProfile;
     this.pendingInitialProfile = null;
     return profile;
+  }
+  trackManagedProcess(child) {
+    this.activeProcesses.add(child);
+    const cleanup = () => {
+      this.activeProcesses.delete(child);
+    };
+    child.once("exit", cleanup);
+    child.once("error", cleanup);
+  }
+  terminateManagedProcess(child) {
+    this.activeProcesses.delete(child);
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      return;
+    }
+    window.setTimeout(() => {
+      if (!isProcessAlive(child)) {
+        return;
+      }
+      try {
+        child.kill("SIGKILL");
+      } catch {
+      }
+    }, 1200);
+  }
+  stopAllManagedProcesses() {
+    for (const child of [...this.activeProcesses]) {
+      this.terminateManagedProcess(child);
+    }
   }
   async activateView(profileToStart) {
     let createdLeaf = false;

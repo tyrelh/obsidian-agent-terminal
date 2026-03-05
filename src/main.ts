@@ -40,6 +40,23 @@ const PROFILE_LABELS: Record<AgentProfile, string> = {
   custom: "Custom"
 };
 
+function isProcessAlive(child: ChildProcessWithoutNullStreams): boolean {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return false;
+  }
+
+  if (child.pid == null) {
+    return false;
+  }
+
+  try {
+    process.kill(child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 class AgentTerminalView extends ItemView {
   plugin: AgentTerminalPlugin;
   terminal: Terminal | null = null;
@@ -330,6 +347,7 @@ class AgentTerminalView extends ItemView {
         env,
         stdio
       });
+      this.plugin.trackManagedProcess(child);
       this.process = child;
       this.processControlStream = null;
 
@@ -381,12 +399,7 @@ class AgentTerminalView extends ItemView {
     this.process = null;
     this.processControlStream = null;
     try {
-      current.kill("SIGTERM");
-      window.setTimeout(() => {
-        if (!current.killed) {
-          current.kill("SIGKILL");
-        }
-      }, 600);
+      this.plugin.terminateManagedProcess(current);
       this.terminal?.write("\r\n\x1b[90m[stopping process]\x1b[0m\r\n");
       this.statusEl.setText("idle");
       if (showNotice) {
@@ -511,6 +524,7 @@ class AgentTerminalSettingTab extends PluginSettingTab {
 export default class AgentTerminalPlugin extends Plugin {
   settings: AgentTerminalSettings = DEFAULT_SETTINGS;
   private pendingInitialProfile: AgentProfile | null = null;
+  private activeProcesses = new Set<ChildProcessWithoutNullStreams>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -545,9 +559,20 @@ export default class AgentTerminalPlugin extends Plugin {
         void this.activateView("claude");
       }
     });
+
+    this.registerDomEvent(window, "beforeunload", () => {
+      this.stopAllManagedProcesses();
+    });
+    this.registerDomEvent(window, "pagehide", () => {
+      this.stopAllManagedProcesses();
+    });
+    this.register(() => {
+      this.stopAllManagedProcesses();
+    });
   }
 
   onunload(): void {
+    this.stopAllManagedProcesses();
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_AGENT_TERMINAL);
   }
 
@@ -583,6 +608,42 @@ export default class AgentTerminalPlugin extends Plugin {
     const profile = this.pendingInitialProfile;
     this.pendingInitialProfile = null;
     return profile;
+  }
+
+  trackManagedProcess(child: ChildProcessWithoutNullStreams): void {
+    this.activeProcesses.add(child);
+    const cleanup = () => {
+      this.activeProcesses.delete(child);
+    };
+    child.once("exit", cleanup);
+    child.once("error", cleanup);
+  }
+
+  terminateManagedProcess(child: ChildProcessWithoutNullStreams): void {
+    this.activeProcesses.delete(child);
+
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (!isProcessAlive(child)) {
+        return;
+      }
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // No-op: process may have exited between liveness check and kill.
+      }
+    }, 1200);
+  }
+
+  stopAllManagedProcesses(): void {
+    for (const child of [...this.activeProcesses]) {
+      this.terminateManagedProcess(child);
+    }
   }
 
   private async activateView(profileToStart?: AgentProfile): Promise<void> {
