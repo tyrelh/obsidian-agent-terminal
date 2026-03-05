@@ -1,0 +1,39 @@
+.agent-terminal-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.agent-terminal-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agent-terminal-profile {
+  width: 140px;
+}
+
+.agent-terminal-command {
+  flex: 1;
+  min-width: 180px;
+}
+
+.agent-terminal-status {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.agent-terminal-output {
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+}
+
+.agent-terminal-output .xterm {
+  height: 100%;
+}
