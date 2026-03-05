@@ -36,4 +36,10 @@
 
 .agent-terminal-output .xterm {
   height: 100%;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.agent-terminal-output .xterm .xterm-viewport {
+  background-color: transparent;
 }

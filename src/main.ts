@@ -158,7 +158,8 @@ class AgentTerminalView extends ItemView {
       convertEol: true,
       fontFamily: this.resolveObsidianMonospaceFont(),
       fontSize: 13,
-      scrollback: 8000
+      scrollback: 8000,
+      theme: this.resolveObsidianTerminalTheme()
     });
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
@@ -186,6 +187,7 @@ class AgentTerminalView extends ItemView {
         return;
       }
       terminal.options.fontFamily = this.resolveObsidianMonospaceFont();
+      terminal.options.theme = this.resolveObsidianTerminalTheme();
       this.fitAddon?.fit();
       this.sendResize();
     }));
@@ -204,6 +206,48 @@ class AgentTerminalView extends ItemView {
       return byTheme;
     }
     return fallback;
+  }
+
+  private resolveObsidianTerminalTheme(): Terminal["options"]["theme"] {
+    const css = window.getComputedStyle(document.body);
+    const pick = (fallback: string, ...names: string[]): string => {
+      for (const name of names) {
+        const value = css.getPropertyValue(name).trim();
+        if (value) {
+          return value;
+        }
+      }
+      return fallback;
+    };
+
+    const foreground = pick("#d7dce2", "--text-normal");
+    const background = pick("#1d2128", "--background-primary");
+    const cursor = pick(foreground, "--text-normal", "--text-accent");
+    const selectionBackground = pick("rgba(127, 127, 127, 0.3)", "--background-modifier-hover");
+
+    return {
+      foreground,
+      background,
+      cursor,
+      cursorAccent: background,
+      selectionBackground,
+      black: pick("#2b303b", "--text-faint", "--background-modifier-border"),
+      red: pick("#e06c75", "--color-red"),
+      green: pick("#98c379", "--color-green"),
+      yellow: pick("#e5c07b", "--color-yellow"),
+      blue: pick("#61afef", "--color-blue"),
+      magenta: pick("#c678dd", "--color-purple"),
+      cyan: pick("#56b6c2", "--color-cyan"),
+      white: pick("#d7dce2", "--text-normal"),
+      brightBlack: pick("#5c6370", "--text-muted"),
+      brightRed: pick("#e06c75", "--color-red"),
+      brightGreen: pick("#98c379", "--color-green"),
+      brightYellow: pick("#e5c07b", "--color-yellow"),
+      brightBlue: pick("#61afef", "--color-blue"),
+      brightMagenta: pick("#c678dd", "--color-purple"),
+      brightCyan: pick("#56b6c2", "--color-cyan"),
+      brightWhite: pick("#ffffff", "--text-normal")
+    };
   }
 
   private applyProfile(profile: AgentProfile): void {
